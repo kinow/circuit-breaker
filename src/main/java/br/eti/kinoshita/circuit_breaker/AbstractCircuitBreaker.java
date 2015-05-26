@@ -30,7 +30,7 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
         return !isOpen();
     }
 
-    public abstract void checkState();
+    public abstract void checkState() throws CircuitBreakingException;
     
     public abstract void incrementAndCheckState(T increment) throws CircuitBreakingException;
 

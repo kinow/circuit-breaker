@@ -6,7 +6,7 @@ public interface CircuitBreaker<T> {
     
     boolean isClose();
     
-    void checkState();
+    void checkState() throws CircuitBreakingException;
     
     void close();
     

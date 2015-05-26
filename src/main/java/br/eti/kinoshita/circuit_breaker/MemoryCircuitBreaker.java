@@ -4,8 +4,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class MemoryCircuitBreaker extends AbstractCircuitBreaker<Long> {
 
-    private long bytesThreshold = 0L;
-    private AtomicLong used;
+    private final long bytesThreshold;
+    private final AtomicLong used;
     
     public MemoryCircuitBreaker(long bytesThreshold) {
         super();
@@ -18,14 +18,9 @@ public class MemoryCircuitBreaker extends AbstractCircuitBreaker<Long> {
     }
     
     @Override
-    public void checkState() {
-        if (bytesThreshold == 0) {
-            open();
-        }
-        
-        long used = this.used.incrementAndGet();
-        if (bytesThreshold > used) {
-            open();
+    public void checkState() throws CircuitBreakingException {
+        if (isOpen()) {
+            throw new CircuitBreakingException("Memory circuit is open!");
         }
     }
 
@@ -35,11 +30,12 @@ public class MemoryCircuitBreaker extends AbstractCircuitBreaker<Long> {
             open();
         }
         
-        long used = this.used.incrementAndGet();
-        used = used + increment;
-        if (bytesThreshold > used) {
+        long used = this.used.addAndGet(increment);
+        if (used > bytesThreshold) {
             open();
         }
+        
+        checkState();
     }
 
 }
