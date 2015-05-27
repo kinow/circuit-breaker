@@ -12,7 +12,7 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
     public static final String PROPERTY_NAME = "open";
 
     /** The current state of this circuit breaker. */
-    private final AtomicReference<State> state = new AtomicReference<State>(
+    protected final AtomicReference<State> state = new AtomicReference<State>(
             State.CLOSED);
 
     /** An object for managing change listeners registered at this instance. */
@@ -84,14 +84,14 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
     public void removeChangeListener(PropertyChangeListener listener) {
         changeSupport.removePropertyChangeListener(listener);
     }
-
+    
     /**
      * An internal enumeration representing the different states of a circuit
      * breaker. This class also contains some logic for performing state
      * transitions. This is done to avoid complex if-conditions in the code of
      * {@code CircuitBreaker}.
      */
-    private static enum State {
+    protected static enum State {
         CLOSED {
             @Override
             public State oppositeState() {
