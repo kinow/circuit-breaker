@@ -4,14 +4,14 @@ public interface CircuitBreaker<T> {
 
     boolean isOpen();
     
-    boolean isClose();
+    boolean isClosed();
     
-    void checkState() throws CircuitBreakingException;
+    boolean checkState() throws CircuitBreakingException;
     
     void close();
     
     void open();
     
-    void incrementAndCheckState(T increment) throws CircuitBreakingException;
+    boolean incrementAndCheckState(T increment) throws CircuitBreakingException;
     
 }

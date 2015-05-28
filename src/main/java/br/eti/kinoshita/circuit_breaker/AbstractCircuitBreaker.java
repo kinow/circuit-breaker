@@ -26,13 +26,13 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
         return isOpen(state.get());
     }
 
-    public boolean isClose() {
+    public boolean isClosed() {
         return !isOpen();
     }
 
-    public abstract void checkState() throws CircuitBreakingException;
+    public abstract boolean checkState() throws CircuitBreakingException;
     
-    public abstract void incrementAndCheckState(T increment) throws CircuitBreakingException;
+    public abstract boolean incrementAndCheckState(T increment) throws CircuitBreakingException;
 
     public void close() {
         changeState(State.CLOSED);
@@ -48,7 +48,7 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
      * @param state the state to be converted
      * @return the boolean open flag
      */
-    private static boolean isOpen(State state) {
+    protected static boolean isOpen(State state) {
         return state == State.OPEN;
     }
     
@@ -58,7 +58,7 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
      *
      * @param newState the new state to be set
      */
-    private void changeState(State newState) {
+    protected void changeState(State newState) {
         if (state.compareAndSet(newState.oppositeState(), newState)) {
             changeSupport.firePropertyChange(PROPERTY_NAME, !isOpen(newState),
                     isOpen(newState));

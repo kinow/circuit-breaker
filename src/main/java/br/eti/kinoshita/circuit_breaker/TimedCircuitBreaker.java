@@ -1,12 +1,8 @@
 package br.eti.kinoshita.circuit_breaker;
 
-import static br.eti.kinoshita.circuit_breaker.AbstractCircuitBreaker.isOpen;
-
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.commons.lang3.concurrent.CircuitBreaker.CheckIntervalData;
-import org.apache.commons.lang3.concurrent.CircuitBreaker.State;
 
 public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
@@ -126,14 +122,18 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     }
     
     @Override
-    public void checkState() throws CircuitBreakingException {
-        performStateCheck(0);
+    public boolean checkState() throws CircuitBreakingException {
+        return performStateCheck(0);
     }
 
     @Override
-    public void incrementAndCheckState(Integer increment)
+    public boolean incrementAndCheckState(Integer increment)
             throws CircuitBreakingException {
-        performStateCheck(1);
+        return performStateCheck(1);
+    }
+    
+    public boolean incrementAndCheckState() throws CircuitBreakingException {
+        return incrementAndCheckState(1);
     }
     
     /**
@@ -157,11 +157,38 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
         // This might cause a race condition if other changes happen in between!
         // Refer to the header comment!
-        if (currentState.isStateTransition(this, currentData, nextData)) {
+        if (isStateTransition(this, nextData)) {
             currentState = currentState.oppositeState();
             changeStateAndStartNewCheckInterval(currentState);
         }
         return !isOpen(currentState);
+    }
+    
+    /**
+     * Updates the {@code CheckIntervalData} object. The current data object is replaced
+     * by the one modified by the last check. The return value indicates whether this was
+     * successful. If it is <strong>false</strong>, another thread interfered, and the
+     * whole operation has to be redone.
+     *
+     * @param currentData the current check data object
+     * @param nextData the replacing check data object
+     * @return a flag whether the update was successful
+     */
+    private boolean updateCheckIntervalData(CheckIntervalData currentData,
+            CheckIntervalData nextData) {
+        return (currentData == nextData)
+                || checkIntervalData.compareAndSet(currentData, nextData);
+    }
+    
+    /**
+     * Changes the state of this circuit breaker and also initializes a new
+     * {@code CheckIntervalData} object.
+     *
+     * @param newState the new state to be set
+     */
+    private void changeStateAndStartNewCheckInterval(State newState) {
+        changeState(newState);
+        checkIntervalData.set(new CheckIntervalData(0, now()));
     }
     
     /**
@@ -178,7 +205,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     private CheckIntervalData nextCheckIntervalData(int increment,
             CheckIntervalData currentData, State currentState, long time) {
         CheckIntervalData nextData;
-        if (currentState.isCheckIntervalFinished(this, currentData, time)) {
+        if (isCheckIntervalFinished(this, currentState, currentData, time)) {
             nextData = new CheckIntervalData(increment, time);
         } else {
             nextData = currentData.increment(increment);
@@ -186,6 +213,14 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
         return nextData;
     }
     
+    private boolean isCheckIntervalFinished(
+            TimedCircuitBreaker timedCircuitBreaker,
+            State currentState,
+            CheckIntervalData currentData, long now) {
+        long checkInterval = (currentState == State.OPEN) ? timedCircuitBreaker.getClosingInterval() : timedCircuitBreaker.getOpeningInterval();
+        return now - currentData.getCheckIntervalStart() > checkInterval;
+    }
+
     /**
      * Returns the current time in nanoseconds. This method is used to obtain the current
      * time. This is needed to calculate the check intervals correctly.
@@ -248,6 +283,10 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
             return (delta != 0) ? new CheckIntervalData(getEventCount() + delta,
                     getCheckIntervalStart()) : this;
         }
+    }
+    
+    public static boolean isStateTransition(TimedCircuitBreaker breaker, CheckIntervalData nextData) {
+        return nextData.getEventCount() > breaker.getOpeningThreshold();
     }
 
 }

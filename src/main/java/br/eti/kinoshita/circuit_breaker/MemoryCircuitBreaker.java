@@ -18,14 +18,12 @@ public class MemoryCircuitBreaker extends AbstractCircuitBreaker<Long> {
     }
     
     @Override
-    public void checkState() throws CircuitBreakingException {
-        if (isOpen()) {
-            throw new CircuitBreakingException("Memory circuit is open!");
-        }
+    public boolean checkState() throws CircuitBreakingException {
+        return isOpen();
     }
 
     @Override
-    public void incrementAndCheckState(Long increment) throws CircuitBreakingException {
+    public boolean incrementAndCheckState(Long increment) throws CircuitBreakingException {
         if (bytesThreshold == 0) {
             open();
         }
@@ -35,7 +33,7 @@ public class MemoryCircuitBreaker extends AbstractCircuitBreaker<Long> {
             open();
         }
         
-        checkState();
+        return checkState();
     }
 
 }
