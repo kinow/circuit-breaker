@@ -30,9 +30,9 @@ public abstract class AbstractCircuitBreaker<T> implements CircuitBreaker<T> {
         return !isOpen();
     }
 
-    public abstract boolean checkState() throws CircuitBreakingException;
+    public abstract boolean checkState();
     
-    public abstract boolean incrementAndCheckState(T increment) throws CircuitBreakingException;
+    public abstract boolean incrementAndCheckState(T increment);
 
     public void close() {
         changeState(State.CLOSED);

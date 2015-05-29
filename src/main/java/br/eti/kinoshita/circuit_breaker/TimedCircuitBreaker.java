@@ -122,7 +122,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     }
     
     @Override
-    public boolean checkState() throws CircuitBreakingException {
+    public boolean checkState() {
         return performStateCheck(0);
     }
 
@@ -132,8 +132,20 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
         return performStateCheck(1);
     }
     
-    public boolean incrementAndCheckState() throws CircuitBreakingException {
+    public boolean incrementAndCheckState() {
         return incrementAndCheckState(1);
+    }
+    
+    @Override
+    public void open() {
+        super.open();
+        checkIntervalData.set(new CheckIntervalData(0, now()));
+    }
+    
+    @Override
+    public void close() {
+        super.close();
+        checkIntervalData.set(new CheckIntervalData(0, now()));
     }
     
     /**
@@ -157,6 +169,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
         // This might cause a race condition if other changes happen in between!
         // Refer to the header comment!
+        // FIXME: diff here
         if (isStateTransition(this, currentState, currentData, nextData)) {
             currentState = currentState.oppositeState();
             changeStateAndStartNewCheckInterval(currentState);
@@ -205,6 +218,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     private CheckIntervalData nextCheckIntervalData(int increment,
             CheckIntervalData currentData, State currentState, long time) {
         CheckIntervalData nextData;
+        //FIXME: diff here
         if (isCheckIntervalFinished(this, currentState, currentData, time)) {
             nextData = new CheckIntervalData(increment, time);
         } else {
@@ -217,7 +231,12 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
             TimedCircuitBreaker timedCircuitBreaker,
             State currentState,
             CheckIntervalData currentData, long now) {
-        long checkInterval = (currentState == State.OPEN) ? timedCircuitBreaker.getClosingInterval() : timedCircuitBreaker.getOpeningInterval();
+        long checkInterval = 0;
+        if (currentState == State.OPEN) {
+            checkInterval = timedCircuitBreaker.getClosingInterval();
+        } else {
+            checkInterval = timedCircuitBreaker.getOpeningInterval();
+        }
         return now - currentData.getCheckIntervalStart() > checkInterval;
     }
 
@@ -290,9 +309,10 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
             return nextData.getCheckIntervalStart() != currentData
                     .getCheckIntervalStart()
                     && currentData.getEventCount() < breaker.getClosingThreshold();
-        } else {
+        } else if (currentState == State.CLOSED) {
             return nextData.getEventCount() > breaker.getOpeningThreshold();
         }
+        throw new CircuitBreakingException("Invalid state transition");
     }
 
 }

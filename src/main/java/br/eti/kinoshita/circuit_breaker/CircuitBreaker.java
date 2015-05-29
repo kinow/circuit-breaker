@@ -6,12 +6,12 @@ public interface CircuitBreaker<T> {
     
     boolean isClosed();
     
-    boolean checkState() throws CircuitBreakingException;
+    boolean checkState();
     
     void close();
     
     void open();
     
-    boolean incrementAndCheckState(T increment) throws CircuitBreakingException;
+    boolean incrementAndCheckState(T increment);
     
 }
