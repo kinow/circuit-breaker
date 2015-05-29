@@ -157,7 +157,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
         // This might cause a race condition if other changes happen in between!
         // Refer to the header comment!
-        if (isStateTransition(this, nextData)) {
+        if (isStateTransition(this, currentState, currentData, nextData)) {
             currentState = currentState.oppositeState();
             changeStateAndStartNewCheckInterval(currentState);
         }
@@ -285,8 +285,14 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
         }
     }
     
-    public static boolean isStateTransition(TimedCircuitBreaker breaker, CheckIntervalData nextData) {
-        return nextData.getEventCount() > breaker.getOpeningThreshold();
+    public static boolean isStateTransition(TimedCircuitBreaker breaker, State currentState, CheckIntervalData currentData, CheckIntervalData nextData) {
+        if (currentState == State.OPEN) {
+            return nextData.getCheckIntervalStart() != currentData
+                    .getCheckIntervalStart()
+                    && currentData.getEventCount() < breaker.getClosingThreshold();
+        } else {
+            return nextData.getEventCount() > breaker.getOpeningThreshold();
+        }
     }
 
 }

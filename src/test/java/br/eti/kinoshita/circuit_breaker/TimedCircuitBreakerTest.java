@@ -34,7 +34,7 @@ import org.junit.Test;
 /**
  * Test class for {@code TimedCircuitBreaker}.
  */
-public class CircuitBreakerTest {
+public class TimedCircuitBreakerTest {
     /** Constant for the opening threshold. */
     private static final int OPENING_THRESHOLD = 10;
 
