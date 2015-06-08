@@ -1,14 +1,19 @@
 package br.eti.kinoshita.circuit_breaker;
 
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 
 public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
+    /** A map for accessing the strategy objects for the different states. */
+    private static final Map<State, StateStrategy> STRATEGY_MAP = createStrategyMap();
+
     /** Stores information about the current check interval. */
     private final AtomicReference<CheckIntervalData> checkIntervalData;
-    
+
     /** The threshold for opening the circuit breaker. */
     private final int openingThreshold;
 
@@ -20,7 +25,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
     /** The time interval for closing the circuit breaker. */
     private final long closingInterval;
-    
+
     /**
      * Creates a new instance of {@code CircuitBreaker} and initializes all properties for
      * opening and closing it based on threshold values for events occurring in specific
@@ -120,7 +125,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     public long getClosingInterval() {
         return closingInterval;
     }
-    
+
     @Override
     public boolean checkState() {
         return performStateCheck(0);
@@ -131,23 +136,23 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
             throws CircuitBreakingException {
         return performStateCheck(1);
     }
-    
+
     public boolean incrementAndCheckState() {
         return incrementAndCheckState(1);
     }
-    
+
     @Override
     public void open() {
         super.open();
         checkIntervalData.set(new CheckIntervalData(0, now()));
     }
-    
+
     @Override
     public void close() {
         super.close();
         checkIntervalData.set(new CheckIntervalData(0, now()));
     }
-    
+
     /**
      * Actually checks the state of this circuit breaker and executes a state transition
      * if necessary.
@@ -169,14 +174,13 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
 
         // This might cause a race condition if other changes happen in between!
         // Refer to the header comment!
-        // FIXME: diff here
-        if (isStateTransition(this, currentState, currentData, nextData)) {
+        if (stateStrategy(currentState).isStateTransition(this, currentData, nextData)) {
             currentState = currentState.oppositeState();
             changeStateAndStartNewCheckInterval(currentState);
         }
         return !isOpen(currentState);
     }
-    
+
     /**
      * Updates the {@code CheckIntervalData} object. The current data object is replaced
      * by the one modified by the last check. The return value indicates whether this was
@@ -192,7 +196,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
         return (currentData == nextData)
                 || checkIntervalData.compareAndSet(currentData, nextData);
     }
-    
+
     /**
      * Changes the state of this circuit breaker and also initializes a new
      * {@code CheckIntervalData} object.
@@ -203,7 +207,7 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
         changeState(newState);
         checkIntervalData.set(new CheckIntervalData(0, now()));
     }
-    
+
     /**
      * Calculates the next {@code CheckIntervalData} object based on the current data and
      * the current state. The next data object takes the counter increment and the current
@@ -218,26 +222,12 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     private CheckIntervalData nextCheckIntervalData(int increment,
             CheckIntervalData currentData, State currentState, long time) {
         CheckIntervalData nextData;
-        //FIXME: diff here
-        if (isCheckIntervalFinished(this, currentState, currentData, time)) {
+        if (stateStrategy(currentState).isCheckIntervalFinished(this, currentData, time)) {
             nextData = new CheckIntervalData(increment, time);
         } else {
             nextData = currentData.increment(increment);
         }
         return nextData;
-    }
-    
-    private boolean isCheckIntervalFinished(
-            TimedCircuitBreaker timedCircuitBreaker,
-            State currentState,
-            CheckIntervalData currentData, long now) {
-        long checkInterval = 0;
-        if (currentState == State.OPEN) {
-            checkInterval = timedCircuitBreaker.getClosingInterval();
-        } else {
-            checkInterval = timedCircuitBreaker.getOpeningInterval();
-        }
-        return now - currentData.getCheckIntervalStart() > checkInterval;
     }
 
     /**
@@ -249,7 +239,35 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
     long now() {
         return System.nanoTime();
     }
-    
+
+    /**
+     * Returns the {@code StateStrategy} object responsible for the given state.
+     *
+     * @param state the state
+     * @return the corresponding {@code StateStrategy}
+     * @throws CircuitBreakingException if the strategy cannot be resolved
+     */
+    private static StateStrategy stateStrategy(State state) {
+        StateStrategy strategy = STRATEGY_MAP.get(state);
+        if (strategy == null) {
+            throw new CircuitBreakingException("Invalid state: " + state);
+        }
+        return strategy;
+    }
+
+    /**
+     * Creates the map with strategy objects. It allows access for a strategy for a given
+     * state.
+     *
+     * @return the strategy map
+     */
+    private static Map<State, StateStrategy> createStrategyMap() {
+        Map<State, StateStrategy> map = new EnumMap<State, StateStrategy>(State.class);
+        map.put(State.CLOSED, new StateStrategyClosed());
+        map.put(State.OPEN, new StateStrategyOpen());
+        return map;
+    }
+
     /**
      * An internally used data class holding information about the checks performed by
      * this class. Basically, the number of received events and the start time of the
@@ -303,16 +321,82 @@ public class TimedCircuitBreaker extends AbstractCircuitBreaker<Integer> {
                     getCheckIntervalStart()) : this;
         }
     }
-    
-    public static boolean isStateTransition(TimedCircuitBreaker breaker, State currentState, CheckIntervalData currentData, CheckIntervalData nextData) {
-        if (currentState == State.OPEN) {
+
+    /**
+     * Internally used class for executing check logic based on the current state of the
+     * circuit breaker. Having this logic extracted into special classes avoids complex
+     * if-then-else cascades.
+     */
+    private abstract static class StateStrategy {
+        /**
+         * Returns a flag whether the end of the current check interval is reached.
+         *
+         * @param breaker the {@code CircuitBreaker}
+         * @param currentData the current state object
+         * @param now the current time
+         * @return a flag whether the end of the current check interval is reached
+         */
+        public boolean isCheckIntervalFinished(TimedCircuitBreaker breaker,
+                CheckIntervalData currentData, long now) {
+            return now - currentData.getCheckIntervalStart() > fetchCheckInterval(breaker);
+        }
+
+        /**
+         * Checks whether the specified {@code CheckIntervalData} objects indicate that a
+         * state transition should occur. Here the logic which checks for thresholds
+         * depending on the current state is implemented.
+         *
+         * @param breaker the {@code CircuitBreaker}
+         * @param currentData the current {@code CheckIntervalData} object
+         * @param nextData the updated {@code CheckIntervalData} object
+         * @return a flag whether a state transition should be performed
+         */
+        public abstract boolean isStateTransition(TimedCircuitBreaker breaker,
+                CheckIntervalData currentData, CheckIntervalData nextData);
+
+        /**
+         * Obtains the check interval to applied for the represented state from the given
+         * {@code CircuitBreaker}.
+         *
+         * @param breaker the {@code CircuitBreaker}
+         * @return the check interval to be applied
+         */
+        protected abstract long fetchCheckInterval(TimedCircuitBreaker breaker);
+    }
+
+    /**
+     * A specialized {@code StateStrategy} implementation for the state closed.
+     */
+    private static class StateStrategyClosed extends StateStrategy {
+
+        @Override
+        public boolean isStateTransition(TimedCircuitBreaker breaker,
+                CheckIntervalData currentData, CheckIntervalData nextData) {
+            return nextData.getEventCount() > breaker.getOpeningThreshold();
+        }
+
+        @Override
+        protected long fetchCheckInterval(TimedCircuitBreaker breaker) {
+            return breaker.getOpeningInterval();
+        }
+    }
+
+    /**
+     * A specialized {@code StateStrategy} implementation for the state open.
+     */
+    private static class StateStrategyOpen extends StateStrategy {
+        @Override
+        public boolean isStateTransition(TimedCircuitBreaker breaker,
+                CheckIntervalData currentData, CheckIntervalData nextData) {
             return nextData.getCheckIntervalStart() != currentData
                     .getCheckIntervalStart()
                     && currentData.getEventCount() < breaker.getClosingThreshold();
-        } else if (currentState == State.CLOSED) {
-            return nextData.getEventCount() > breaker.getOpeningThreshold();
         }
-        throw new CircuitBreakingException("Invalid state transition");
+
+        @Override
+        protected long fetchCheckInterval(TimedCircuitBreaker breaker) {
+            return breaker.getClosingInterval();
+        }
     }
 
 }
